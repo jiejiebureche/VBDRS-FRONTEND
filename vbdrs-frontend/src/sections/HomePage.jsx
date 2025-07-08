@@ -1,12 +1,8 @@
-import { useState } from "react";
-import { ReactMic } from "react-mic";
-import {
-  Mic,
-  Upload,
-  ShieldAlert,
-  ChevronDown,
-  ChevronLeft,
-} from "lucide-react";
+import { useState, useEffect } from "react";
+import { Mic, Upload, ShieldAlert, ChevronLeft } from "lucide-react";
+import { useRecorder } from "../hooks/useRecorder"; // <- NEW HOOK
+import WaveformRecorder from "../components/WaveformRecorder";
+import WaveformVisualizer from "../components/WaveformVisualizer";
 
 function bufferToWavBlob(buffer) {
   const numOfChan = buffer.numberOfChannels;
@@ -64,48 +60,48 @@ function bufferToWavBlob(buffer) {
 
 export default function HomePage() {
   const [showRecorder, setShowRecorder] = useState(false);
-  const [record, setRecord] = useState(false);
   const [audioFile, setAudioFile] = useState(null);
   const [detectedEmotion, setDetectedEmotion] = useState("");
   const [predictionTable, setPredictionTable] = useState([]);
 
-  const handleStartRecording = () => {
-    setRecord(true);
+  const { startRecording, stopRecording, isRecording, audioURL, stream, setAudioURL, } =
+    useRecorder({
+      timeLimit: 4000,
+    });
 
-    // Automatically stop after 4 seconds (4000ms)
-    setTimeout(() => {
-      setRecord(false);
-    }, 4000);
-  };
+  useEffect(() => {
+    const sendToBackend = async () => {
+      if (!audioURL) return;
 
-  const handleStopRecording = () => setRecord(false);
+      const response = await fetch(audioURL);
+      const blob = await response.blob();
+      setAudioFile(blob);
 
-  const handleOnStop = async (recordedBlob) => {
-    setAudioFile(recordedBlob.blob);
+      const formData = new FormData();
+      formData.append("audio", blob, "recording.webm");
 
-    const formData = new FormData();
-    formData.append("audio", recordedBlob.blob, "recording.webm");
+      try {
+        const res = await fetch("http://localhost:8000/predict", {
+          method: "POST",
+          body: formData,
+        });
 
-    try {
-      const response = await fetch("http://localhost:8000/predict", {
-        method: "POST",
-        body: formData,
-      });
+        if (!res.ok) throw new Error("Prediction failed");
 
-      if (!response.ok) throw new Error("Prediction failed");
+        const data = await res.json();
+        setDetectedEmotion(data.emotion);
+        setPredictionTable((prev) => [
+          ...(data.prediction_table || []),
+          ...prev,
+        ]);
+      } catch (err) {
+        console.error("Error predicting:", err);
+        alert("Prediction failed.");
+      }
+    };
 
-      const data = await response.json();
-      setDetectedEmotion(data.emotion);
-      setPredictionTable((prev) => [...(data.prediction_table || []), ...prev]);
-
-      // if (data.emotion.toLowerCase() === "fear") {
-      //   alert("⚠️ Danger Detected! Emotion: Fear");
-      // }
-    } catch (error) {
-      console.error("Error predicting emotion:", error);
-      alert("Error predicting emotion. Try again.");
-    }
-  };
+    sendToBackend();
+  }, [audioURL]);
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
@@ -152,10 +148,6 @@ export default function HomePage() {
       const data = await response.json();
       setDetectedEmotion(data.emotion);
       setPredictionTable((prev) => [...(data.prediction_table || []), ...prev]);
-
-      // if (data.emotion.toLowerCase() === "fear") {
-      //   alert("⚠️ Danger Detected! Emotion: Fear");
-      // }
     } catch (error) {
       console.error("Error handling uploaded audio:", error);
       alert("Error processing audio file. Try another WAV file.");
@@ -220,21 +212,24 @@ export default function HomePage() {
         ) : (
           <div className="mt-10 w-full flex flex-col items-center">
             <div className="w-full max-w-2xl h-40 bg-gray-800 rounded-lg mb-4 flex items-center justify-center">
-              <ReactMic
-                record={record}
-                onStop={handleOnStop}
-                mimeType="audio/webm"
-                strokeColor="#ffffff" // Tailwind's dark blue-800
-                backgroundColor="#1f2937" // gray-900 for contrast
-                visualSetting="sinewave"
-                className="w-full h-full"
-              />
+              {isRecording ? (
+                <WaveformVisualizer stream={stream} isRecording={isRecording} />
+              ) : audioURL ? (
+                <audio src={audioURL} controls className="mx-auto mt-2" />
+              ) : (
+                <p className="text-gray-500">
+                  Click the mic to start recording
+                </p>
+              )}
             </div>
 
             <div className="w-full flex items-center justify-between mb-4">
               <button
                 className="bg-gray-700 p-4 rounded-full text-white hover:bg-gray-600 transition ml-4"
-                onClick={() => setShowRecorder(false)}
+                onClick={() => {
+                  setShowRecorder(false);
+                  setAudioURL(null); // <- clear the audio blob
+                }}
                 title="Back"
               >
                 <ChevronLeft className="w-6 h-6 text-gray-700" />
@@ -242,14 +237,13 @@ export default function HomePage() {
               <div className="flex-1 flex justify-center">
                 <button
                   className="bg-gray-700 p-4 rounded-full text-white hover:bg-gray-600 transition"
-                  onClick={record ? handleStopRecording : handleStartRecording}
-                  title={record ? "Stop Recording" : "Start Recording"}
+                  onClick={isRecording ? stopRecording : startRecording}
+                  title={isRecording ? "Stop Recording" : "Start Recording"}
                 >
                   <Mic className="w-6 h-6 text-gray-900" />
                 </button>
               </div>
               <div style={{ width: "56px" }} />{" "}
-              {/* Spacer to balance the layout */}
             </div>
 
             <span className="mt-2 text-sm italic text-gray-400">
