@@ -81,7 +81,7 @@ export default function HomePage() {
       formData.append("audio", blob, "recording.webm");
 
       try {
-        const res = await fetch("http://localhost:8000/predict", {
+        const res = await fetch("https://vbdrs-gru-backend-1.onrender.com/predict", {
           method: "POST",
           body: formData,
         });
@@ -138,7 +138,7 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append("audio", wavBlob, file.name);
 
-      const response = await fetch("http://localhost:8000/predict", {
+      const response = await fetch("https://vbdrs-gru-backend-1.onrender.com/predict", {
         method: "POST",
         body: formData,
       });
